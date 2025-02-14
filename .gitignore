@@ -2,3 +2,4 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars    # This file contains sensitive data
+.terraform.lock.hcl
