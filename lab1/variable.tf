@@ -1,5 +1,5 @@
 variable "ami_id" {
-    default = "ami-06c68f701d8090592"
+    default = "ami-085ad6ae776d8f09c"
   
 }
 
@@ -14,7 +14,7 @@ variable "availability_zone" {
 }
 
 variable "key_name" {
-    default = "mypockey"
+    default = "test-key-mexico"
   
 }
 
