@@ -1,0 +1,226 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+    annotations:
+        secret.reloader.stakater.com/reload: {{ .Values.projectName }}-pod-secret
+    name: {{ .Values.projectName | quote }}
+    labels:
+        app: {{ .Values.projectName | quote }}
+    spec:
+        replicas: {{ default "1" .Values.replicas }}
+        revisionHistoryLimit: 2
+        selector:
+            matchLabels:
+                app: {{ .Values.projectName | quote }}
+                deploymentconfig: {{ .Values.projectName | quote }}
+
+            strategy:
+                rollingUpdate:
+                    maxUnavailable: 0
+                    maxSurge: 100%
+            template:
+                metadata:
+                    annotations:
+                        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+                        {{- if eq .Values.enablePrometheusScrape true }}
+                        prometheus.io/scrape: "true"
+                        {{- end }}
+                    labels:
+                        app: {{ .Values.projectName | quote }}
+                        deploymentconfig: {{ .Values.projectName | quote }}
+                        {{- if eq .Values.enableTagging true }}
+                        garComponent: {{ .Values.garComponent | quote }}
+                        garApplication: {{ .Values.garApplication | quote }}
+                        project: {{ .Values.projectName | quote }}
+                        {{- end }}
+            spec:
+              {{-if .Values.iam_role }}
+              serviceAccountName: "{{ .Values.group }}-{{ .Values.env }}-{{ .Values.projectName }}"
+              {{- end }}
+              volumes:
+                - name: config-volume
+                  configMap:
+                    name: {{ .Values.projectName }}-app-config
+               {{- if eq .Values.angularFrontEndConfigRequired true }}
+                - name: angular-config-volume
+                  configMap:
+                    name: {{ .Values.projectName }}-angular-app-config
+               {{- end }}
+               {{- if eq .Values.nginxangularConfigRequired true }}
+                - name: nginxangular-config-volume
+                    configMap:
+                        name: {{ .Values.projectName }}-nginxangular-app-config  
+                {{- end }}
+                - name: cert-volume
+                  secret:
+                    defaultMode: 420
+                    secretName: {{ .Values.projectName }}-pod-secret
+               {{- if eq .Values.SharedConfig true }}
+                - name: shared-config-volume
+                    configMap:
+                        name: {{ .Values.env }}-{{ .Values.group }}-shared-app-config
+                {{- end }}
+              {{- if eq .Values.persistentVolume true }}
+                - name: {{ .Values.projectName }}-pvc
+                  persistentVolumeClaim:
+                    claimName: {{ .Values.projectName }}-volume-claim
+              {{- end }}
+            containers: 
+                - name: {{ .Values.projectName | quote }}
+                  env:
+                    - name: TZ
+                      value: America/New_York
+                    - name: CONFIG_LOCATION
+                      value: {{ .Values.configMapPath | quote }}
+                    - name: NAMESPACE_NAME
+                        valueFrom:
+                            fieldRef:
+                            fieldPath: metadata.namespace
+                    - name: POD_NAME
+                        valueFrom:
+                            fieldRef:
+                            fieldPath: metadata.name 
+                    - name: APP_NAME
+                        value: {{ .Values.projectName | quote }}
+                    {{- if .Values.newRelicAppName }}
+                    - name: NEW_RELIC_APP_NAME
+                      value: {{ .Values.newRelicAppName | quote }}
+                    {{- end }}
+                    {{- if .Values.newRelicLabels }}
+                    - name: NEW_RELIC_LABELS
+                      value: {{ .Values.newRelicLabels | quote }}
+                    {{- end }}
+                    {{- if .Values.newRelicNoConfigFile }}
+                    - name: NEW_RELIC_NO_CONFIG_FILE
+                      value: {{ .Values.newRelicNoConfigFile | quote }}
+                    {{- end }}
+                    - name: JAVA_MAX_MEM_RATIO
+                        value: "75"                
+                   {{- if .Value.maxMetaspaceSize }}
+                    - name: GC_MAX_METASPACE_SIZE
+                      value: {{ .Values.maxMetaspaceSize | quote }}
+                   {{- end }}
+                    # {{- if .Values.caapmProfile }}
+                    # - name: JAVA_OPTIONS
+                    #   value: "javaagent:/opt/caapm/agent/wily/Agent.jar -Dcom.wily.introscope.agentProfile={{ .Values.caapmProfile }} -Dcom.wily.introscope.agent.agentName={{ .Values.projectName }} -Dcom.wily.introscope.agent.transport.tcp.host={{ .Values.caapmHost }} -Dcom.wily.introscope.agent.transport.tcp.port={{ .Values.caapmPort }}"
+                    # {{- end }}
+                    valueFrom:
+                      configMapKeyRef:
+                        key: NEW_RELIC_KEY
+                        name: {{ .Values.projectName }}-app-config
+                     - name: NEW_RELIC_LICENSE_KEY
+                      valueFrom:
+                        configMapKeyRef:
+                          key: ENV_NAME
+                          name: {{ .Values.projectName }}-app-config
+                      - name: ENCRYPTOR_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            key: ENCRYPTOR_PASSWORD
+                            name: {{ .Values.env }}-{{ .Values.group}}-secret
+                        {{-if eq .Values.logEncryptor true }}
+                        - name: LOG_ENCRYPTOR_PASSWORD
+                            valueFrom:
+                                secretKeyRef:
+                                key: LOG_ENCRYPTOR_PASSWORD
+                                name: {{ .Values.env }}-{{ .Values.group}}-secret
+                            {{- end }}
+                        volumeMounts:
+                            - name: config-volume
+                              mountPath: {{ .Values.configMapPath | quote }}
+                              readOnly: true
+                            {{- if eq .Values.angularFrontEndConfigRequired true }}
+                            - name: angular-config-volume
+                              mountPath: /usr/src/app/src/environments
+                              readOnly: true
+                            {{- end }}
+                            {{- if eq .Values.nginxangularConfigRequired true }}
+                            - name: nginxangular-config-volume
+                              mountPath: {{ .Values.nginxangularConfigPath | quote }}
+                            {{- end }}
+                            - name: cert-volume
+                              mountPath: /deployments/certs/pod
+                            {{- if eq .Values.SharedConfig true }}
+                            - name: shared-config-volume
+                              mountPath: {{ .Values.configMapPathShared }}
+                            {{- end }}
+                            {{- if eq .Values.persistentVolume true }}
+                            - name: {{ .Values.projectName }}-pvc
+                              mountPath: {{ .Values.pvcMountPoint | quote }}
+                            {{- end }} 
+                    image: >-
+                        {{ .Values.aws_acc_id }}.dkr.ecr.us-east-1.amazonaws.com/{{ .Values.dockerIamgeName }}:{{ .Values.dockerImageTag }}
+                    imagePullPolicy: Always
+                    ports:
+                        - containerPort: {{ .Values.healthCheckPort }}
+                          name: https
+                          protocol: TCP 
+                        - containerPort: {{ .Values.applicationPort }}
+                            name: tomcat
+                            protocol: TCP 
+                        - containerPort: 8778
+                            name: jolokia
+                            protocol: TCP
+                    resources:
+                        limits:
+                            memory: {{ default "768Mi".Values.maxMemoryLimit }}
+                            cpu: {{ default "1" .Values.maxCPU | quote }}
+                        requests:
+                            memory: {{ default "768Mi".Values.maxMemory }}
+                            cpu: {{ default "150m" .Values.minCPU | quote }}                 
+                    livenessProbe:
+                         failureThresold: 10
+                         {{- if eq .Values.commandBasedHealthCheck true }}
+                            exec:
+                                command:
+                                    - {{ .Values.healthCheckCommand }}
+                            {{- else }}
+                            httpGet:
+                            {{ -if eq .Values.springBoot2 true}}
+                               path: /actuator/health
+                            {{- else }}
+                                path: {{ default "/health" .Values.healthCheckPath }}
+                            {{- end }}
+                                port: {{ .Values.healthCheckPort }}
+                                scheme: HTTP
+                            {{- end }}
+                            initialDelaySeconds: {{ default "60" .Values.livenessProbe_initialDelaySeconds }}
+                            periodSeconds: 10
+                            successThreshold: 1
+                            timeoutSeconds: 5
+                    readinessProbe:
+                        failureThresold: 10
+                        {{-if eq .Values.commandBasedHealthCheck true }}
+                        exec:
+                            command:
+                                - {{ .Values.healthCheckCommand }}
+                        {{- else }}
+                        httpGet:
+                        {{-if eq .Values.springBoot2 true }}
+                            path: /actuator/health
+                        {{- else }}
+                            path: {{ default "/health" .Values.healthCheckPath }}
+                        {{- end }}
+                            port: {{ .Values.healthCheckPort }}
+                            scheme: HTTP
+                        {{- end }}
+                        initialDelaySeconds: {{ default "60" .Values.readinessProbe_initialDelaySeconds }}
+                        periodSeconds: 10
+                        successThreshold: 1
+                        timeoutSeconds: 5
+                    terminationMessagePath: /dev/termination-log
+                    terminationMessagePolicy: File
+                dnsPolicy: ClusterFirst
+                restartPolicy: Always
+                schedulerName: default-scheduler
+                securityContext: {}
+                terminationGracePeriodSeconds: 60
+    
+
+                           
+
+
+
+                        
+                    
+                    

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.projectName }}-app-config
+data:
+{{-if .Values.jarfilename  }}
+    JAVA_APP_JAR: {{ .Values.jarfilename }}
+{{- else }}
+    JAVA_APP_JAR: ""
+{{- end }}
+{{-if eq .Values.env "prod" }}
+    NEW_RELIC_KEY: {{ .Values.nrProdKey }}
+    ENV_NAME: {{ .Values.env }}
+{{ else }}
+    NEW_RELIC_KEY: {{ .Values.nrNonProdKey }}
+    ENV_NAME: {{ .Values.env }}
+{{ end }}
+{{ tpl (.File.Glob "config/*").AsConfig | indent 2 }}
+

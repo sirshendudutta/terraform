@@ -1,0 +1,27 @@
+module "srorz_Glue"
+    count = "${length(local.glue_variables)}"
+    source = ""
+    spark_gluejob = true
+    securityconfig = false
+    kms_key_arn = data.aws_kms_key.kms_key.arn
+    gluerole_arn = data.aws_iam_role.glue_role.arn
+    component = "${element(local.glue_variables.*.count.index)}"
+    cloudwatch_encryption_mode = "SSE-KMS"
+    job_bookmark_encryption_mode = "DISABLED"
+    s3_encryption_mode = "SSE-KMS"
+    security_configuration = "${var.lob}-${var.env}-${var.project}-${var.application}-common-securityconfig"
+    appid = var.appid
+    application = var.application
+    project = var.project
+    lob = var.lob
+    env = var.env
+    glue_version = "${element(local.glue_variables.*.glue_version, count.index)}"
+    max_concurrent_runs = "${element(local.glue_variables.*.max_concurrent_runs, count.index)}"
+    gluejob_script_location = "${element(local.glue_variables.*.gluejob_script_location, count.index)}"
+    job_command_name = "gluetl"
+    python = "${element(local.glue_variables.*.python_version, count.index)}"
+    default_arguments = "${element(local.glue_variables.*.default_arguments, count.index)}"
+    max_retries = "${element(local.glue_variables.*.max_retries, count.index)}"
+    number_of_workers = "${element(local.glue_variables.*.number_of_workers, count.index)}"
+    catalogdb = var.catalogdb
+    gluejob_timeout = "${element(local.glue_variables.*.gluejob_timeout, count.index)}"
